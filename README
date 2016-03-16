@@ -1,0 +1,16 @@
+$ipython --pylab
+
+In [1]: import map_maker
+
+In [2]: import fanbeams
+
+In [3]: z = fanbeams.load_tracked_fanbeams("data/2016-03-08-06_49_43.20s.clean.fits","2016/03/08 06:49:43.20","09:04:10.8","-74:59:42.8",20.0016)
+
+In [4]: clean,bg = fanbeams.filter_fanbeams(z,33,mode='nearest')
+
+In [5]: extent = [2.20,2.55,-1.36,-1.26]
+
+In [6]: map = map_maker.make_map(clean,extent,300,300,op=np.median,beam_model=None)
+
+In [7]: imshow(map.map,aspect='auto',vmin=0.0,vmax=1.0)
+Out[7]: <matplotlib.image.AxesImage at 0x5fde650>
