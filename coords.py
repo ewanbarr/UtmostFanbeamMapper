@@ -131,3 +131,28 @@ def nsew_of_constant_ha(ha,dec):
     ns,ew = pos_from_vector(np.dot(R,np.transpose(P,(2,0,1))).transpose((1,2,0)).squeeze().transpose())
     ns,ew = _catch_discontinuitues(ns,ew)
     return np.array((ns,ew))
+
+#2016/3/17 09:00:36
+def radec_of_offset_fanbeam(ra,dec,ew_offset,utc):
+    current_molonglo = Molonglo(utc)
+    boresight = e.FixedBody()
+    boresight._epoch = e.J2000
+    boresight._ra = ra
+    boresight._dec = dec
+
+    boresight.compute(current_molonglo)
+    
+    lst = current_molonglo.sidereal_time()
+    ns,ew = hadec_to_nsew(lst-boresight.ra,boresight.dec)
+    
+    fanbeam_ew = ew + ew_offset
+    ha,dec = nsew_to_hadec(ns,fanbeam_ew)
+    
+    J2000_molonglo = Molonglo(e.J2000)
+    fanbeam = e.FixedBody()
+    fanbeam._epoch = current_molonglo.date
+    fanbeam._ra = lst - ha
+    fanbeam._dec = dec
+    fanbeam.compute(J2000_molonglo)
+    
+    return fanbeam.ra,fanbeam.dec
