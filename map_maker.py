@@ -28,10 +28,11 @@ class RADecMap(object):
         
         fname: name of output file        
         """
+        deg = np.degrees
         wcs = WCS(naxis=2)
-        wcs.wcs.crpix = [data.shape[1]/2, data.shape[0]/2]
-        wcs.wcs.cdelt = np.array([self.delta_ra, self.delta_dec])
-        wcs.wcs.crval = [self.ras[self.data.shape[1]/2], self.decs[self.data.shape[0]/2]]
+        wcs.wcs.crpix = [self.map.shape[1]/2, self.map.shape[0]/2]
+        wcs.wcs.cdelt = np.array([deg(self.delta_ra), deg(self.delta_dec)])
+        wcs.wcs.crval = [deg(self.ras[self.map.shape[1]/2]), deg(self.decs[self.map.shape[0]/2])]
         wcs.wcs.ctype = ["RA---TAN", "DEC--TAN"]
         header = wcs.to_header()
         hdu = fits.PrimaryHDU(self.map)
@@ -64,6 +65,14 @@ def default_beam_model(ns_offsets):
     fwhm = np.radians(2.0)
     sigma = fwhm/2.355
     return 1/gaussian(ns_offsets,0.0,sigma)
+
+def fanbeam_model(ns_offsets,ew_offsets):
+    ns_fwhm = np.radians(2.0)
+    ns_sigma = ns_fwhm/2.355
+    ew_fwhm = np.radians(41/3600.0)
+    ew_sigma = ew_fwhm/2.355
+    return 1/(gaussian(ns_offsets,0.0,ns_sigma)*gaussian(ew_offsets,0.0,ew_sigma))
+
     
 def make_map(fanbeams,
              extent,
@@ -71,6 +80,7 @@ def make_map(fanbeams,
              ndec,
              beam_model=default_beam_model,
              op=np.median,
+             cache = True
              ):
     """ Make an equatorial map from a set of fanbeams.
     
@@ -85,15 +95,21 @@ def make_map(fanbeams,
     output = RADecMap(extent,nra,ndec)
     
     #get all tracks and offsets
-    tracks,offsets = fanbeams.radecs_to_tracks(output.ras,output.decs)
+    if cache:
+        tracks,offsets = fanbeams.radecs_to_tracks(output.ras,output.decs)
     
     #loop over ra and dec values to populate map
     for ii,ra in enumerate(output.ras):
         print ii,"/",output.ras.size,"\r",
         for jj,dec in enumerate(output.decs):
             #extract a trail through fanbeam space
-            trail,xcoords = fanbeams.extract(tracks[jj,ii])
-            ns_offsets = offsets[jj,ii][xcoords]
+            if cache:
+                trail,xcoords = fanbeams.extract(tracks[jj,ii],fanbeams._xcoords)
+                ns_offsets = offsets[jj,ii][xcoords]
+            else:
+                track,ns_offsets = fanbeams.radec_to_track(ra,dec)
+                trail,xcoords = fanbeams.extract(track,fanbeams._xcoords)
+                ns_offsets = ns_offsets[xcoords]
             
             #inline background subtraction would happen here
 

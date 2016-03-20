@@ -20,9 +20,24 @@ class FanBeamTimeMap(object):
         self.data = data
         self.nsamps = data.shape[1]
         self.nbeams = data.shape[0]
-        self.data[0] = self.data[1]
+        self.total_power = np.copy(self.data[0])
+        self.data[0]= self.data[1]
         self.lsts = lsts
         self.mask = np.ones(data.shape,dtype='bool')
+        self._cache = {}
+        self._xcoords = np.arange(self.nsamps)
+        
+    def copy(self):
+        fb = copy.deepcopy(self)
+        fb._cache = self._cache
+        return fb
+
+    def append(self,other):
+        self.data = np.hstack((self.data,other.data))
+        self.nsamps += other.nsamps
+        self.total_power = np.hstack((self.total_power,other.total_power))
+        self.lsts = np.hstack((self.lsts,other.lsts))
+        self.mask = np.hstack((self.mask,other.mask))
         self._cache = {}
         self._xcoords = np.arange(self.nsamps)
 
@@ -60,16 +75,16 @@ class FanBeamTimeMap(object):
         tracks = np.empty([decs.size,ras.size,self.nsamps],dtype='int32')
         offsets = np.empty([decs.size,ras.size,self.nsamps],dtype='float32')
         for ii,ra in enumerate(ras):
-            print ii,"/",ras.size,"\r",
+            #print ii,"/",ras.size,"\r",
             for jj,dec in enumerate(decs):
                 idxs,ns_offset = self.radec_to_track(ra,dec)
                 tracks[jj,ii] = idxs
                 offsets[jj,ii] = ns_offset
-        print
+        #print
         self._cache[key] = (tracks,offsets)
         return tracks,offsets
 
-    def extract(self,idxs):
+    def extract(self,idxs,xcoords):
         """
         Extract a trail through fanbeam space.
 
@@ -78,8 +93,8 @@ class FanBeamTimeMap(object):
         Note: only valid data are returned
         """
         mask = (idxs > 0) & (idxs < self.nbeams)
-        pixel_mask = self.mask[(idxs[mask],self._xcoords[mask])]
-        x = self._xcoords[mask][pixel_mask]
+        pixel_mask = self.mask[(idxs[mask],xcoords[mask])]
+        x = xcoords[mask][pixel_mask]
         return self.data[(idxs[mask][pixel_mask],x)],x
     
 
@@ -97,8 +112,7 @@ class TransitFanBeamTimeMap(FanBeamTimeMap):
         self.ns = ns
         self.ew = ew
         self.ew_r = EW_R/np.cos(self.ew)
-
-
+        
 class TrackedFanBeamTimeMap(FanBeamTimeMap):
     def __init__(self,data,ra,dec,lsts):
         """
@@ -118,29 +132,58 @@ class TrackedFanBeamTimeMap(FanBeamTimeMap):
         self.ew = ew
         self.ew_r = EW_R/np.cos(self.ew)
 
+    def append(self,other):
+        self.ns = np.hstack((self.ns,other.ns))
+        self.ew = np.hstack((self.ew,other.ew))
+        self.ew_r = np.hstack((self.ew_r,other.ew_r))
+        self.hour_angles = np.hstack((self.hour_angles,other.hour_angles))
+        super(TrackedFanBeamTimeMap,self).append(other)
 
-def filter_fanbeams(fanbeams,window,thresh=None,mode='nearest'):
+
+def subtract_background(fanbeams,background,thresh=None):
+    """
+    Subtract a background array and normalise the fanbeams.
+
+    fanbeams: An object of basetype FanBeamTimeMap
+    background: A FanBeamTimeMap containing a background 
+    thresh: Sigma threshold for clipping
+    """
+    clean = fanbeams.copy()
+    data = clean.data
+    data-=background.data
+    mad = 1.4826 * np.median(abs(data-np.median(data,axis=0)),axis=0)
+    muad = 1.253314 * np.mean(abs(data-np.mean(data,axis=0)),axis=0)
+    mad[mad==0] = muad[mad==0]
+    data/=mad
+    if thresh is not None:
+        data = data.clip(max=thresh)
+    clean.data = data
+    return clean
+
+def median_filter(fanbeams,window,mode='nearest'):
     """
     Apply a median filter to a set of fanbeams.
 
     fanbeams: An object of basetype FanBeamTimeMap
     window: size of the filter window.
-    thresh: sigma threshold for clipping
-
-    Note: filter is applied along the fanbeam axis, not the time axis
+    mode: filter mode for edges
     """
-    clean = copy.deepcopy(fanbeams)
-    background = copy.deepcopy(fanbeams)
-    data = np.copy(fanbeams.data)
-    med = filters.median_filter(data,size=[window,1],mode=mode)
-    subtracted = data-med
-    mad = 1.4826 * np.median(abs(subtracted),axis=0)
-    subtracted/=mad
-    if thresh is not None:
-        subtracted = subtracted.clip(max=thresh)
-    clean.data = subtracted
-    background.data = med
-    return clean,background
+    background = fanbeams.copy()
+    background.data = filters.median_filter(fanbeams.data,size=[window,1],mode=mode)
+    return background
+
+def poly_filter(fanbeams,deg):
+    """
+    Apply a polynomial filter to a set of fanbeams.
+
+    fanbeams: An object of basetype FanBeamTimeMap
+    deg: degree of polynomial
+    """
+    background = fanbeams.copy()
+    data = background.data
+    x = np.arange(background.nbeams)
+    background.data = np.array([np.polyval(j,x) for j in np.polyfit(x,data,deg).T]).T
+    return background
 
 def _load_fanbeams(fname,utc_start,tsamp):
     """Helper function"""
