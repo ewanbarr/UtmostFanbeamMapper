@@ -133,7 +133,8 @@ def nsew_of_constant_ha(ha,dec):
     return np.array((ns,ew))
 
 #2016/3/17 09:00:36
-def radec_of_offset_fanbeam(ra,dec,ew_offset,utc):
+def radec_of_offset_fanbeam(ra,dec,beam,utc):
+    info = {}
     current_molonglo = Molonglo(utc)
     boresight = e.FixedBody()
     boresight._epoch = e.J2000
@@ -141,11 +142,11 @@ def radec_of_offset_fanbeam(ra,dec,ew_offset,utc):
     boresight._dec = dec
 
     boresight.compute(current_molonglo)
-    
     lst = current_molonglo.sidereal_time()
     ns,ew = hadec_to_nsew(lst-boresight.ra,boresight.dec)
     
-    fanbeam_ew = ew + ew_offset
+    ew_extent = np.radians(4.0)/np.cos(ew)
+    fanbeam_ew = ew + (beam-177)*ew_extent/352
     ha,dec = nsew_to_hadec(ns,fanbeam_ew)
     
     J2000_molonglo = Molonglo(e.J2000)
@@ -153,6 +154,35 @@ def radec_of_offset_fanbeam(ra,dec,ew_offset,utc):
     fanbeam._epoch = current_molonglo.date
     fanbeam._ra = lst - ha
     fanbeam._dec = dec
+
+
     fanbeam.compute(J2000_molonglo)
     
-    return fanbeam.ra,fanbeam.dec
+    
+    info['boresight'] = boresight
+    info['fanbeam'] = fanbeam
+    info['mol_curr'] = current_molonglo
+    info['mol_j2000'] = J2000_molonglo
+    info['fanbeam_nsew'] = ns,fanbeam_ew
+    info['beamwidth'] = ew_extent/352.
+    info['boresight_nsew'] = ns,ew
+    return fanbeam.ra,fanbeam.dec,info
+
+def radec_to_J2000(ra,dec,utc):
+    J2000_molonglo = Molonglo(e.J2000)
+    source = e.FixedBody()
+    source._epoch = utc
+    source._ra = ra
+    source._dec = dec
+    source.compute(J2000_molonglo)
+    return source.ra,source.dec
+    
+
+def J2000_to_radec(ra,dec,utc):
+    current_molonglo = Molonglo(utc)
+    source = e.FixedBody()
+    source._epoch = e.J2000
+    source._ra = ra
+    source._dec = dec
+    source.compute(current_molonglo)
+    return source.ra,source.dec
