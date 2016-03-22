@@ -46,8 +46,14 @@ def get_beam_loc(ra,dec,utc,beam_a,beam_b,sn_a,sn_b):
     ns_fwhm = np.radians(2.0)
     prob_map = norm.pdf(ratio_map,ratio,ratio_sigma) * norm.pdf(ns,0.0,ns_fwhm/2.355)
     prob_map/=prob_map.max()
-       
-    return ns+ns_a,ew+ew_a,prob_map,lst
+    
+    ns = ns+ns_a
+    ew = ew+ew_a
+    best_ns = ns[(prob_map.max(axis=1).argmax(),prob_map.max(axis=0).argmax())]
+    best_ew = ew[(prob_map.max(axis=1).argmax(),prob_map.max(axis=0).argmax())]
+    ha,dec = coords.nsew_to_hadec(best_ns,best_ew)
+    ra,dec = coords.radec_to_J2000(lst-ha,dec,utc)
+    return ra,dec,ns,ew,prob_map,lst
 
 def deg_to_hhmmss(x,pos):
     return ephem.hours(np.radians(x))
@@ -168,7 +174,10 @@ if __name__ == "__main__":
     ra,dec = args.coords.split()
     beam_a,beam_b = args.beams
     sn_a,sn_b = args.sn
-    ns,ew,prob,lst = get_beam_loc(ra,dec,args.utc,beam_a,beam_b,sn_a,sn_b)
+    best_ra,best_dec,ns,ew,prob,lst = get_beam_loc(ra,dec,args.utc,beam_a,beam_b,sn_a,sn_b)
+    print "Best coordinates for FRB:"
+    print "R.A.  (J2000):",ephem.hours(best_ra)
+    print "Decl. (J2000):",ephem.degrees(best_dec)
     make_plots(ns,ew,prob,args.utc,lst,args.title)
     plt.show()
 
